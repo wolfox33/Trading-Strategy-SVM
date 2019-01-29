@@ -1,0 +1,120 @@
+#install.packages("quantmod")
+#install.packages("e1071")
+#install.packages("PerformanceAnalytics")
+#install.packages("ggplot2")
+
+library('quantmod')
+library("e1071")
+library("PerformanceAnalytics")
+library("ggplot2")
+
+getSymbols("^BVSP",from = "2015-01-01", to = "2019-01-28")
+Data <- BVSP
+Data <- na.omit(Data)
+period <- 10
+MAData <- SMA(Cl(Data),n = period)
+
+Price <- lag(MAData,-1)-lag(MAData,0)
+Class <- ifelse(Price>0,"Up","Down")
+
+cci <- CCI(HLC(Data),n=14,c=0.015)
+macd <- MACD(Cl(Data),nFast=21,nSlow=34,nSig=9)$macd
+mfi <- MFI(HLC(Data),Vo(Data),n=13)
+obv <- OBV(Cl(Data),Vo(Data))
+rsi <- RSI(Cl(Data),n=12)
+atr <- ATR(HLC(Data),n=10)
+trix <- TRIX(Cl(Data), n= 21, nSig = 9)
+#Features from TTR package
+
+
+DataSet <- data.frame(cci,macd,mfi,obv,rsi,atr,trix,Class)
+DataSet <- DataSet[-c(1:251),]
+Data <- Data[-c(1:251),]
+if(nrow(Data)!=nrow(DataSet)){
+  print("Error: different rows of Data and DataSet")
+}
+#check
+select <- seq(1,nrow(DataSet),10)
+DataSet.Select <- DataSet[select,]
+colnames(DataSet) <- c("CCI","MACD","MFI","OBV","RSI","TR","ATR","trueHigh","trueLow","TRIX","signal","Class")
+colnames(DataSet.Select) <- c("CCI","MACD","MFI","OBV","RSI","TR","ATR","trueHigh","trueLow","TRIX","signal","Class")
+
+w <- 0.6
+trainstart <- 1
+trainend <- round(w*length(DataSet.Select[,1]))
+teststart <- round(w*length(DataSet.Select[,1]))+1
+testend <- length(DataSet.Select[,1])
+
+Training <- DataSet.Select[trainstart:trainend,]
+Test <- DataSet.Select[teststart:testend,]
+#Separate the data into 80% training set to build our model, 20% test set to test the patterns we found
+
+
+costs <- 1
+gammas <- 0.01
+kernel <- "radial"
+formula = Class~CCI+MACD+MFI+OBV+RSI+ATR+TRIX
+
+best.svm <- best.tune(svm,
+                      formula,
+                      data=Training,kernel = kernel,cost = costs,gamma = gammas,
+                      tunecontrol = tune.control(sampling = "cross",cross=5))
+#Train SVM
+
+TrainingPredictions<-predict(best.svm,Training,type="class")
+TrainingData<-data.frame(Training,TrainingPredictions)
+Training.error <- sum(TrainingData[,"Class"]!=TrainingData[,"TrainingPredictions"])/nrow(TrainingData)
+
+
+modifyMyPos <- function(pos,periods){
+  modifypos <- rep(pos,each=periods)
+  modifypos <- modifypos[-(1:(periods-1))]
+  return(modifypos)
+}
+
+myPosition <- function(x,model,periods){
+  position <- ifelse(predict(model,x,type="class")=="Up",1,-1)
+  modipos <- modifyMyPos(position,periods)
+  return(modipos)
+}
+#Strategy: if the svm model says "Up", long it; else short it.
+
+myStock <- Test
+test.start.row <- which(rownames(DataSet) == rownames(Test[1,]))
+test.end.row <- which(rownames(DataSet) == rownames(Test[nrow(Test),]))
+test <- Cl(Data)[test.start.row:test.end.row,]
+
+if(nrow(test)!=1+(nrow(Test)-1)*period){
+  print("Error: test or Test has wrong #row")
+}
+
+myposition <- myPosition(x = myStock,model = best.svm,periods=period)
+bmkReturns <- dailyReturn(test, type = "arithmetic")
+myReturns <- bmkReturns*Lag(myposition,1)
+myReturns[1] <- 0
+
+names(bmkReturns) <- 'IBOV'
+names(myReturns) <- 'SVM Model'
+
+charts.PerformanceSummary(cbind(bmkReturns,myReturns))
+
+Performance <- function(x) {
+  
+  cumRetx = Return.cumulative(x)
+  annRetx = Return.annualized(x, scale=252)
+  sharpex = SharpeRatio.annualized(x, scale=252)
+  winpctx = length(x[x > 0])/length(x[x != 0])
+  annSDx = sd.annualized(x, scale=252)
+  
+  DDs <- findDrawdowns(x)
+  maxDDx = min(DDs$return)
+  maxLx = max(DDs$length)
+  
+  Perf = c(cumRetx, annRetx, sharpex, winpctx, annSDx, maxDDx, maxLx)
+  names(Perf) = c("Cumulative Return", "Annual Return","Annualized Sharpe Ratio",
+                  "Win %", "Annualized Volatility", "Maximum Drawdown", "Max Length Drawdown")
+  return(Perf)
+}
+cbind(SVM=Performance(myReturns),IBOV=Performance(bmkReturns))  
+sprintf("Training Error: %g",Training.error)
+
