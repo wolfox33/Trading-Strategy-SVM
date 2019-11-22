@@ -8,14 +8,14 @@ library("e1071")
 library("PerformanceAnalytics")
 library("ggplot2")
 
-getSymbols("^BVSP",from = "2015-01-01", to = "2019-01-28")
+getSymbols("^BVSP",from = "2010-01-01", to = "2019-12-30")
 Data <- BVSP
 Data <- na.omit(Data)
 period <- 10
 MAData <- SMA(Cl(Data),n = period)
 
-Price <- lag(MAData,-1)-lag(MAData,0)
-Class <- ifelse(Price>0,"Up","Down")
+Trend <- lag(MAData,-1)-lag(MAData,0)
+Class <- ifelse(Trend > 0,"Up","Down")
 
 cci <- CCI(HLC(Data),n=14,c=0.015)
 macd <- MACD(Cl(Data),nFast=21,nSlow=34,nSig=9)$macd
@@ -39,7 +39,7 @@ DataSet.Select <- DataSet[select,]
 colnames(DataSet) <- c("CCI","MACD","MFI","OBV","RSI","TR","ATR","trueHigh","trueLow","TRIX","signal","Class")
 colnames(DataSet.Select) <- c("CCI","MACD","MFI","OBV","RSI","TR","ATR","trueHigh","trueLow","TRIX","signal","Class")
 
-w <- 0.6
+w <- 0.8
 trainstart <- 1
 trainend <- round(w*length(DataSet.Select[,1]))
 teststart <- round(w*length(DataSet.Select[,1]))+1
@@ -117,4 +117,3 @@ Performance <- function(x) {
 }
 cbind(SVM=Performance(myReturns),IBOV=Performance(bmkReturns))  
 sprintf("Training Error: %g",Training.error)
-
