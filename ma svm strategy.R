@@ -9,7 +9,7 @@ require(PerformanceAnalytics)
 require(e1071)
 require(ggplot2)
 
-getSymbols("^GSPC",from = "2000-01-01", to = "2015-01-01")
+getSymbols("^GSPC",from = "2015-01-01", to = "2020-01-01")
 Data <- GSPC
 period <- 10
 MAData <- SMA(Cl(Data),n = period)
