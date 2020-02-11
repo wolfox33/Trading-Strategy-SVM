@@ -14,7 +14,7 @@ Data <- na.omit(Data)
 period <- 10
 MAData <- SMA(Cl(Data),n = period)
 
-Trend <- lag(MAData,-1)-lag(MAData,0)
+Trend <- lag.xts(MAData,-1)-lag.xts(MAData,0)
 Class <- ifelse(Trend > 0,"Up","Down")
 
 cci <- CCI(HLC(Data),n=14,c=0.015)
