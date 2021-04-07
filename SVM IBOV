@@ -8,14 +8,14 @@ library("e1071")
 library("PerformanceAnalytics")
 library("ggplot2")
 
-getSymbols("^BVSP",from = "2010-01-01", to = "2019-12-30")
+getSymbols("^BVSP",from = "2018-01-01", to = "2022-12-30")
 Data <- BVSP
 Data <- na.omit(Data)
 period <- 10
 MAData <- SMA(Cl(Data),n = period)
 
 Trend <- lag.xts(MAData,-1)-lag.xts(MAData,0)
-Class <- ifelse(Trend > 0,"Up","Down")
+Class <- ifelse(Trend > 0,1,0)
 
 cci <- CCI(HLC(Data),n=14,c=0.015)
 macd <- MACD(Cl(Data),nFast=21,nSlow=34,nSig=9)$macd
@@ -39,7 +39,7 @@ DataSet.Select <- DataSet[select,]
 colnames(DataSet) <- c("CCI","MACD","MFI","OBV","RSI","TR","ATR","trueHigh","trueLow","TRIX","signal","Class")
 colnames(DataSet.Select) <- c("CCI","MACD","MFI","OBV","RSI","TR","ATR","trueHigh","trueLow","TRIX","signal","Class")
 
-w <- 0.8
+w <- 0.6
 trainstart <- 1
 trainend <- round(w*length(DataSet.Select[,1]))
 teststart <- round(w*length(DataSet.Select[,1]))+1
@@ -52,7 +52,7 @@ Test <- DataSet.Select[teststart:testend,]
 
 costs <- 1
 gammas <- 0.01
-kernel <- "radial"
+kernel <- "sigmoid"
 formula = Class~CCI+MACD+MFI+OBV+RSI+ATR+TRIX
 
 best.svm <- best.tune(svm,
@@ -63,8 +63,6 @@ best.svm <- best.tune(svm,
 
 TrainingPredictions<-predict(best.svm,Training,type="class")
 TrainingData<-data.frame(Training,TrainingPredictions)
-Training.error <- sum(TrainingData[,"Class"]!=TrainingData[,"TrainingPredictions"])/nrow(TrainingData)
-
 
 modifyMyPos <- function(pos,periods){
   modifypos <- rep(pos,each=periods)
@@ -73,7 +71,7 @@ modifyMyPos <- function(pos,periods){
 }
 
 myPosition <- function(x,model,periods){
-  position <- ifelse(predict(model,x,type="class")=="Up",1,-1)
+  position <- ifelse(predict(model,x,type="class")> median(TrainingPredictions),1,-1)
   modipos <- modifyMyPos(position,periods)
   return(modipos)
 }
@@ -115,5 +113,4 @@ Performance <- function(x) {
                   "Win %", "Annualized Volatility", "Maximum Drawdown", "Max Length Drawdown")
   return(Perf)
 }
-cbind(SVM=Performance(myReturns),IBOV=Performance(bmkReturns))  
-sprintf("Training Error: %g",Training.error)
+cbind(SVM=Performance(myReturns),IBOV=Performance(bmkReturns))
